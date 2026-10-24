@@ -1,5 +1,6 @@
 import type { Complaint, ComplaintEvent, Recommendation } from '../types'
 import { mockComplaints, mockEvents, mockRecommendations } from '../data/mockComplaints'
+import { api } from '../lib/api'
 
 export interface ComplaintFilters {
   search: string
@@ -7,8 +8,29 @@ export interface ComplaintFilters {
   bureau: string
 }
 
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
+
 class ComplaintService {
   async getComplaints(filters?: ComplaintFilters): Promise<Complaint[]> {
+    if (!useMock) {
+      try {
+        const params: Record<string, string> = {}
+        if (filters?.search) params.search = filters.search
+        if (filters?.status && filters.status !== 'ALL') params.status = filters.status
+        if (filters?.bureau && filters.bureau !== 'ALL') params.bureau = filters.bureau
+        const response = await api.get('/complaints', { params })
+        const data = response.data
+        if (Array.isArray(data)) {
+          return data
+        }
+        if (data && Array.isArray(data.content)) {
+          return data.content
+        }
+      } catch (error) {
+        throw error
+      }
+    }
+
     let results = [...mockComplaints]
     if (filters) {
       if (filters.search) {
@@ -31,10 +53,37 @@ class ComplaintService {
   }
 
   async getComplaintById(id: string): Promise<Complaint | undefined> {
+    if (!useMock) {
+      try {
+        const response = await api.get(`/complaints/${id}`)
+        return response.data
+      } catch (error) {
+        throw error
+      }
+    }
     return mockComplaints.find((c) => c.id === id)
   }
 
   async getEventsByComplaintId(complaintId: string): Promise<ComplaintEvent[]> {
+    if (!useMock) {
+      try {
+        const response = await api.get(`/complaints/${complaintId}/events`)
+        const data = response.data
+        if (Array.isArray(data)) {
+          return data.map((e: any) => ({
+            id: e.id,
+            complaintId: e.complaintId,
+            timestamp: e.timestamp,
+            actor: e.actor,
+            action: e.action,
+            details: e.details,
+          }))
+        }
+        return []
+      } catch (error) {
+        throw error
+      }
+    }
     return mockEvents
       .filter((e) => e.complaintId === complaintId)
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
@@ -99,7 +148,64 @@ class ComplaintService {
     return alerts
   }
 
+  async getInstitutions() {
+    if (!useMock) {
+      try {
+        const response = await api.get('/institutions')
+        return response.data
+      } catch (error) {
+        throw error
+      }
+    }
+    return [
+      { id: 'inst-001', code: 'GEC-01', name: 'Government Engineering College', location: 'City A' },
+      { id: 'inst-002', code: 'IOT-02', name: 'Institute of Technology', location: 'City B' },
+      { id: 'inst-003', code: 'POL-03', name: 'Polytechnic College', location: 'City C' },
+    ]
+  }
+
   async getInstitutionSummary() {
+    if (!useMock) {
+      try {
+        const [institutionsRes, complaintsRes] = await Promise.all([
+          api.get('/institutions'),
+          api.get('/complaints', { params: { size: 100 } }),
+        ])
+        const institutions = institutionsRes.data || []
+        const complaintsData = complaintsRes.data
+        const complaints = Array.isArray(complaintsData) ? complaintsData : complaintsData?.content || []
+
+        const summaryMap = new Map<string, { institution: string; code: string; complaints: Complaint[]; count: number; id: string }>()
+        for (const inst of institutions) {
+          summaryMap.set(inst.id, {
+            id: inst.id,
+            institution: inst.name,
+            code: inst.code,
+            complaints: [],
+            count: 0,
+          })
+        }
+        for (const c of complaints) {
+          const instId = c.institutionId
+          if (summaryMap.has(instId)) {
+            summaryMap.get(instId)!.complaints.push(c)
+            summaryMap.get(instId)!.count++
+          } else {
+            summaryMap.set(instId, {
+              id: instId,
+              institution: c.institutionName || instId,
+              code: c.institutionCode || '',
+              complaints: [c],
+              count: 1,
+            })
+          }
+        }
+        return Array.from(summaryMap.values())
+      } catch (error) {
+        throw error
+      }
+    }
+
     const summary: Record<string, { institution: string; code: string; complaints: Complaint[]; count: number }> = {}
     for (const c of mockComplaints) {
       if (!summary[c.institutionId]) {

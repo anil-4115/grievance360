@@ -3,6 +3,7 @@ import { complaintService } from '../services/complaintService'
 import type { Complaint } from '../types'
 
 interface InstitutionSummary {
+  id?: string
   institution: string
   code: string
   complaints: Complaint[]
@@ -12,12 +13,21 @@ interface InstitutionSummary {
 export default function Institutions() {
   const [summaries, setSummaries] = useState<InstitutionSummary[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    complaintService.getInstitutionSummary().then((data) => {
-      setSummaries(data)
-      setLoading(false)
-    })
+    setLoading(true)
+    setError(null)
+    complaintService
+      .getInstitutionSummary()
+      .then((data) => {
+        setSummaries(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err?.message || 'Failed to load institutions')
+        setLoading(false)
+      })
   }, [])
 
   const getStatusColor = (status: string) => {
@@ -42,6 +52,10 @@ export default function Institutions() {
 
       {loading ? (
         <div className="text-center py-8 text-gray-500">Loading...</div>
+      ) : error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+          <p className="text-red-800">Error: {error}</p>
+        </div>
       ) : summaries.length === 0 ? (
         <div className="text-center py-8 text-gray-500">No institutions found</div>
       ) : (
